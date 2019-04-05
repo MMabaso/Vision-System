@@ -1,4 +1,4 @@
-#!/usr/bin/env python 
+#!/usr/bin/env python
 
 # Anchor detection: a node for detecting anchors
 # Matsilele Mabaso 2019
@@ -6,6 +6,7 @@
 import numpy as np
 import rospy
 import cv2 # OpenCV module
+import cv2.aruco as aruco
 
 from std_msgs.msg import String
 from sensor_msgs.msg import Image
@@ -41,7 +42,7 @@ topic = '/Anchor_position_topic'
 Position_pub = rospy.Publisher(topic, AnchorPosition, queue_size=10)
 
 # Parameters used to detect a circle
-Circle_thresh = 50
+Circle_thresh = 14
 
 def image_callback(rgb_data, depth_data):
   #print 'got an image'
@@ -58,7 +59,7 @@ def image_callback(rgb_data, depth_data):
   keys = predictedPosition
   #Dictionar for anchors true positions, 
   truePosition = {'Anchor 1': (344, 126), 'Anchor 2': (342, 115), 'Anchor 3': (342, 115), 'Anchor 4': (296, 202)}
-
+  
   if len(cnts) > 0:
     c = max(cnts, key = cv2.contourArea)
 
@@ -67,7 +68,7 @@ def image_callback(rgb_data, depth_data):
     ((xp, yp), radius) = cv2.minEnclosingCircle(c)
     print(radius)
     M = cv2.moments(c)
-    center = (int(M["m10"]/M["m00"]), int(M["m01"]/M["m00"]))
+    #center = (int(M["m10"]/M["m00"]), int(M["m01"]/M["m00"]))
     
     #Get the depth value from the depth image
     zc = cv_image_depth[int(yp)][int(xp)]/1000
@@ -77,20 +78,21 @@ def image_callback(rgb_data, depth_data):
     # only proceed if the radius meets a minimum size. 
     # Correct this value for your obect's size
     if radius > Circle_thresh:
-      barCode = code(cv_image) 
+      #barCode = code(cv_image)
+      name =  aruco_detect(cv_image) 
       colors = {'yellow':(0, 255, 217)}
-      
+
       # Draw the bounding circle
       cv2.circle(cv_image, (int(xp), int(yp)), int(radius),(0, 255, 217), 2)
-      cv2.putText(cv_image, barCode, (int(xp-radius), int(yp-radius)), cv2.FONT_HERSHEY_SIMPLEX,  0.6,(0, 0, 0), 3)
+      cv2.putText(cv_image, name, (int(xp-radius), int(yp-radius)), cv2.FONT_HERSHEY_SIMPLEX,  0.6,(0, 0, 0), 2)
       
       xc,yc,xn, yn = getXYZ(xp, yp, zc, fx,fy,cx,cy)
-      predictedPosition[barCode] = center
+      #predictedPosition[name] = center
       moved = matching(truePosition, predictedPosition, 40)
 
       # Anchor position object
       position = AnchorPosition()
-      position.anchorName = barCode
+      position.anchorName = name
       position.xc = xc
       position.yc = yc
       position.zc = zc
@@ -99,20 +101,22 @@ def image_callback(rgb_data, depth_data):
   
   cv2.imshow("Frame", cv_image)
   cv2.waitKey(50)
+  #time.sleep(1)
 
 
 def find_red_maker(cv_image):
   
   hsv_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
   # Define the range of red color in HSV
-  lower_yellow = np.array([120, 128, 84])
-  upper_yellow = np.array([179, 255, 255])
+  lower_red = np.array([170, 50, 50])
+  upper_red = np.array([180, 255, 255])
 
   # Threshold the HSV image to get only red colors
-  kernel = np.ones((9, 9), np.uint8)
-  mask = cv2.inRange(hsv_image, lower_yellow, upper_yellow)
+  kernel = np.ones((1, 1), np.uint8)
+  mask = cv2.inRange(hsv_image, lower_red, upper_red)
   mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
   mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+  #cv2.imshow('Mask', mask)
 
   #Find the contours in the mask 
   cnts = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
@@ -202,7 +206,21 @@ def matching(truePosition, predictedPosition, threshold):
 
   return moved
 
+def aruco_detect(image):
+  aruco_dict = aruco.Dictionary_get(aruco.DICT_5X5_250)
+  param = aruco.DetectorParameters_create()
+  corners, ids, rejectedImgPoints = aruco.detectMarkers(image, aruco_dict, parameters = param)
+  if ids != None:
+    name = ids[0]
+    name1 = name[0]
+    name2 = str(name1)
+    name3 = 'Anchor '
+    name4 = name3 + name2
+    print(name4)
+    return name4
 
+  else:
+    return str(None)
 
 def main(args):
   # Subscribe to both RGB and Depth images with a Synchronizer
